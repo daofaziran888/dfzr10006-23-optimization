@@ -73,5 +73,29 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 加工规则批量导入与转换取证
+
+数据加工转换模块支持批量导入后试运行，解析结果带指纹缓存，可核对、可回滚：
+
+- `POST /api/transform/import`：批量导入加工规则。首次解析后缓存指纹，
+  已成功解析的规则直接复用，只解析新增或变更项；相同规则再次导入只标注未变化，
+  转换日志引用同一解析版本；并发导入同一规则版本只保留一份。
+- `POST /api/transform/dry-run`：试运行，输出输出格式、被裁剪字段和转换日志；
+  失败时标明规则编号和缺失字段。
+- `GET /api/transform/results`：加工结果带书签并保留导入版本；
+  核对（`POST /api/transform/results/{书签}/verify`）后发布已验证的输出字段快照，
+  下载路径（`GET /api/transform/results/{书签}/download`）只引用已核对的输出内容。
+- `POST /api/transform/results/{书签}/sync-subscribe`：结果同步到数据订阅推送，
+  推送格式只能引用已验证的输出字段快照（`snapshot://规则编号/解析版本`）。
+- `POST /api/transform/rollback/{规则编号}`：回滚恢复上一版加工结果，
+  并在服务版本回退模块留痕。
+
+规则语法：输入/输出格式写作 `JSON:field1,field2`；映射表达式写作
+`目标=来源` 或 `目标=trim|upper|lower(来源)`，多条用 `;` 分隔；
+字段过滤为逗号分隔的输入字段名。被裁剪字段 = 显式过滤 ∪ 未被映射引用的输入字段。
+
+回归：`cd backend && .venv/bin/python -m pytest tests/ -q`，
+以 TRAN-0001 至 TRAN-0003 的种子规则做导入回归与回滚核对。
+
 领域：数据工程
 子方向：数据分析与数据应用

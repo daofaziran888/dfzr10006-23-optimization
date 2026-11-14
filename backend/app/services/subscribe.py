@@ -6,10 +6,28 @@ from typing import Any
 from app.store import store
 
 MODULE = "subscribe"
+SNAPSHOT_TABLE = "transform_snapshots"
 REQUIRED_FIELDS = ["任务编号", "数据源名称", "推送目标"]
 STATUS_ORDER = ["草稿", "推送中", "已暂停", "已完成"]
 ACTION_RULES = {"启动推送": "草稿", "暂停推送": "推送中", "归档任务": "已暂停"}
 NEGATIVE_ACTIONS = []
+
+
+def verified_snapshot_refs() -> set[str]:
+    """已验证的输出字段快照引用集合：推送格式只允许引用这些快照。"""
+    return {
+        str(row.get("快照引用"))
+        for row in store.rows(SNAPSHOT_TABLE)
+        if row.get("状态") == "已验证"
+    }
+
+
+def validate_push_format(push_format: str) -> str | None:
+    """校验推送格式；引用快照时必须指向已验证的输出字段快照，否则返回错误说明。"""
+    text = str(push_format or "").strip()
+    if text.startswith("snapshot://") and text not in verified_snapshot_refs():
+        return f"推送格式引用的输出字段快照 {text} 未验证，仅允许引用已验证快照"
+    return None
 
 
 class SubscribeService:
@@ -37,6 +55,9 @@ class SubscribeService:
         missing = [field for field in REQUIRED_FIELDS if not str(values.get(field) or "").strip()]
         if missing:
             return None, missing
+        format_error = validate_push_format(str(values.get("推送格式") or ""))
+        if format_error:
+            return None, [format_error]
         rows = store.rows(MODULE)
         entry = {"id": max((int(row.get("id", 0)) for row in rows), default=0) + 1}
         entry.update({field: values.get(field) for field in REQUIRED_FIELDS})
